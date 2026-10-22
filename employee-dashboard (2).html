@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>React Employee Dashboard</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+</head>
+<body class="bg-slate-950 text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    const API_URL = '/api/employees';
+
+    async function api(path = '', options = {}) {
+      let res;
+      try {
+        res = await fetch(API_URL + path, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(options.headers || {}),
+          },
+        });
+      } catch (err) {
+        throw new Error('Cannot connect to the backend. Check that the server is running.');
+      }
+      if (!res.ok) {
+        let msg = `Request failed (${res.status}).`;
+        try {
+          const data = await res.json();
+          if (data.message) msg = data.message;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      return res.json();
+    }
+
+    function useHashRoute() {
+      const get = () => (window.location.hash.replace('#', '') || '/');
+      const [route, setRoute] = useState(get());
+      useEffect(() => {
+        const onChange = () => setRoute(get());
+        window.addEventListener('hashchange', onChange);
+        return () => window.removeEventListener('hashchange', onChange);
+      }, []);
+      return route;
+    }
+
+    function Navbar({ route }) {
+      const link = (path) =>
+        `px-4 py-2 rounded-lg text-sm font-medium transition ${
+          route === path
+            ? 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30'
+            : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+        }`;
+      return (
+        <header className="sticky top-0 z-50 backdrop-blur-md bg-slate-900/80 border-b border-slate-700/60">
+          <nav className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+            <a href="#/" className="text-lg font-semibold tracking-tight">EmployeeHub</a>
+            <div className="flex items-center gap-1.5">
+              <a href="#/" className={link('/')}>Home</a>
+              <a href="#/add-employee" className={link('/add-employee')}>Employee Form</a>
+            </div>
+          </nav>
+        </header>
+      );
+    }
+
+    function Dashboard() {
+      const [employees, setEmployees] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState('');
+      const [query, setQuery] = useState('');
+      const [view, setView] = useState('table');
+
+      useEffect(() => {
+        (async () => {
+          try {
+            setEmployees(await api());
+          } catch (err) {
+            setError(err.message || 'Could not load employees.');
+          } finally {
+            setLoading(false);
+          }
+        })();
+      }, []);
+
+      const handleDelete = async (emp) => {
+        if (!window.confirm(`Delete ${emp.name}?`)) return;
+        try {
+          await api(`/${emp._id}`, { method: 'DELETE' });
+          setEmployees((list) => list.filter((e) => e._id !== emp._id));
+        } catch (err) {
+          alert(err.message || 'Could not delete the employee.');
+        }
+      };
+
+      const filtered = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return employees;
+        return employees.filter(
+          (e) =>
+            String(e.name || '').toLowerCase().includes(q) ||
+            String(e.designation || '').toLowerCase().includes(q) ||
+            String(e.location || '').toLowerCase().includes(q)
+        );
+      }, [employees, query]);
+
+      const tab = (name) =>
+        `px-3 py-1.5 rounded-md text-sm font-medium transition ${
+          view === name ? 'bg-sky-500/20 text-sky-300' : 'text-slate-400 hover:text-white'
+        }`;
+      const ready = !loading && !error && filtered.length > 0;
+
+      const actions = (e) => (
+        <div className="flex items-center gap-3">
+          <a href={`#/edit-employee/${e._id}`} className="text-sm text-sky-300 hover:underline">Edit</a>
+          <button onClick={() => handleDelete(e)} className="text-sm text-red-300 hover:underline">Delete</button>
+        </div>
+      );
+
+      return (
+        <>
+          <h1 className="text-3xl font-bold tracking-tight">Employee Dashboard</h1>
+          <p className="text-slate-400 mt-2 mb-8">Employees stored in your database.</p>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name, designation or location"
+              aria-label="Search employees"
+              className="w-full sm:max-w-sm px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700/60 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+            />
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-800/60 border border-slate-700/60 self-start">
+              <button onClick={() => setView('table')} className={tab('table')}>Table</button>
+              <button onClick={() => setView('cards')} className={tab('cards')}>Cards</button>
+            </div>
+          </div>
+
+          {loading && <p className="text-slate-400">Loading employees…</p>}
+          {error && (
+            <p role="alert" className="text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+              {error} Make sure the backend is running, then refresh the page.
+            </p>
+          )}
+          {!loading && !error && employees.length === 0 && (
+            <p className="text-slate-400">No employees yet. Use the Employee Form to add one.</p>
+          )}
+          {!loading && !error && employees.length > 0 && filtered.length === 0 && (
+            <p className="text-slate-400">No employees match “{query}”.</p>
+          )}
+
+          {ready && view === 'table' && (
+            <div className="overflow-x-auto rounded-2xl border border-slate-700/60 bg-slate-800/40">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-700/60 bg-slate-800/60 text-sm text-slate-400">
+                    <th className="px-6 py-4 font-semibold">Name</th>
+                    <th className="px-6 py-4 font-semibold">Designation</th>
+                    <th className="px-6 py-4 font-semibold">Location</th>
+                    <th className="px-6 py-4 font-semibold">Salary</th>
+                    <th className="px-6 py-4 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/40">
+                  {filtered.map((e) => (
+                    <tr key={e._id} className="hover:bg-slate-700/30">
+                      <td className="px-6 py-4 text-sm font-medium">{e.name}</td>
+                      <td className="px-6 py-4 text-sm text-slate-300">{e.designation}</td>
+                      <td className="px-6 py-4 text-sm text-slate-300">{e.location}</td>
+                      <td className="px-6 py-4 text-sm text-slate-300">{Number(e.salary || 0).toLocaleString()}</td>
+                      <td className="px-6 py-4">{actions(e)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {ready && view === 'cards' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((e) => (
+                <div key={e._id} className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
+                  <p className="text-lg font-semibold">{e.name}</p>
+                  <p className="text-sm text-sky-300 mt-1">{e.designation}</p>
+                  <p className="text-sm text-slate-400 mt-1">{e.location}</p>
+                  <p className="text-sm text-slate-300 mt-1">Salary: {Number(e.salary || 0).toLocaleString()}</p>
+                  <div className="mt-4">{actions(e)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      );
+    }
+
+    const emptyForm = { name: '', designation: '', location: '', salary: '' };
+    const fields = [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'designation', label: 'Designation', type: 'text' },
+      { name: 'location', label: 'Location', type: 'text' },
+      { name: 'salary', label: 'Salary', type: 'number' },
+    ];
+
+    function validate(v) {
+      const errors = {};
+      if (!String(v.name).trim()) errors.name = 'Enter the employee’s name.';
+      if (!String(v.designation).trim()) errors.designation = 'Enter a designation.';
+      if (!String(v.location).trim()) errors.location = 'Enter a location.';
+      if (v.salary === '' || !Number.isFinite(Number(v.salary)) || Number(v.salary) <= 0) errors.salary = 'Enter a salary greater than 0.';
+      return errors;
+    }
+
+    function EmployeeForm({ id }) {
+      const isEdit = Boolean(id);
+      const [values, setValues] = useState(emptyForm);
+      const [errors, setErrors] = useState({});
+      const [saved, setSaved] = useState(null);
+      const [loading, setLoading] = useState(isEdit);
+      const [submitting, setSubmitting] = useState(false);
+      const [serverError, setServerError] = useState('');
+
+      useEffect(() => {
+        if (!isEdit) return;
+        (async () => {
+          try {
+            const emp = await api(`/${id}`);
+            setValues({
+              name: emp.name || '',
+              designation: emp.designation || '',
+              location: emp.location || '',
+              salary: emp.salary ?? '',
+            });
+          } catch (err) {
+            setServerError(err.message || 'Could not load the employee.');
+          } finally {
+            setLoading(false);
+          }
+        })();
+      }, [id]);
+
+      const handleChange = (e) => {
+        const { name, value } = e.target;
+        setValues((v) => ({ ...v, [name]: value }));
+        setErrors((er) => ({ ...er, [name]: undefined }));
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        const found = validate(values);
+        setErrors(found);
+        if (Object.keys(found).length) return;
+
+        setSubmitting(true);
+        setServerError('');
+        const body = JSON.stringify({ ...values, salary: Number(values.salary) });
+        try {
+          const result = isEdit
+            ? await api(`/${id}`, { method: 'PUT', body })
+            : await api('', { method: 'POST', body });
+          setSaved(result);
+          if (!isEdit) setValues(emptyForm);
+        } catch (err) {
+          setServerError(err.message || 'Could not save the employee.');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      if (loading) return <p className="text-slate-400">Loading employee…</p>;
+
+      return (
+        <div className="max-w-xl">
+          <h1 className="text-3xl font-bold tracking-tight">{isEdit ? 'Edit Employee' : 'Employee Form'}</h1>
+          <p className="text-slate-400 mt-2 mb-8">
+            {isEdit ? 'Update the details of this employee.' : 'Enter the details of a new employee.'}
+          </p>
+
+          {serverError && (
+            <p role="alert" className="text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-5">
+              {serverError}
+            </p>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate className="space-y-5">
+            {fields.map((f) => (
+              <div key={f.name}>
+                <label htmlFor={f.name} className="block text-sm font-medium text-slate-300 mb-1.5">{f.label}</label>
+                <input
+                  id={f.name}
+                  name={f.name}
+                  type={f.type}
+                  min={f.type === 'number' ? 1 : undefined}
+                  value={values[f.name]}
+                  onChange={handleChange}
+                  aria-invalid={!!errors[f.name]}
+                  className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700/60 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+                />
+                {errors[f.name] && <p className="text-sm text-red-300 mt-1.5">{errors[f.name]}</p>}
+              </div>
+            ))}
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-5 py-2.5 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-60 text-sm font-semibold text-slate-950 transition"
+              >
+                {submitting ? 'Saving…' : isEdit ? 'Update employee' : 'Save employee'}
+              </button>
+              {isEdit && (
+                <a href="#/" className="px-4 py-2.5 text-sm text-slate-300 hover:text-white">Cancel</a>
+              )}
+            </div>
+          </form>
+
+          {saved && (
+            <div role="status" className="mt-8 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+              <p className="font-semibold text-emerald-300 mb-2">
+                {isEdit ? 'Employee updated' : 'Employee saved'}
+              </p>
+              <dl className="text-sm grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                <dt className="text-slate-400">Name</dt><dd>{saved.name}</dd>
+                <dt className="text-slate-400">Designation</dt><dd>{saved.designation}</dd>
+                <dt className="text-slate-400">Location</dt><dd>{saved.location}</dd>
+                <dt className="text-slate-400">Salary</dt><dd>{Number(saved.salary || 0).toLocaleString()}</dd>
+              </dl>
+              <a href="#/" className="inline-block mt-4 text-sm text-sky-300 hover:underline">Back to dashboard</a>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const route = useHashRoute();
+      const editMatch = route.match(/^\/edit-employee\/([a-fA-F0-9]{24})$/);
+      return (
+        <div className="min-h-screen">
+          <Navbar route={route} />
+          <main className="max-w-6xl mx-auto px-6 py-10">
+            {editMatch ? (
+              <EmployeeForm key={editMatch[1]} id={editMatch[1]} />
+            ) : route === '/add-employee' ? (
+              <EmployeeForm key="new" />
+            ) : (
+              <Dashboard />
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
